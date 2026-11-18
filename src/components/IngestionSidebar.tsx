@@ -40,6 +40,10 @@ interface IngestionSidebarProps {
   onSaveManualOverride: (id: string, status: string) => void;
   onRemoveManualOverride: (id: string) => void;
   onClearAllOverrides: () => void;
+  selectedIds?: string[];
+  activeBatchLabel?: string | null;
+  idSectionPulseKey?: number;
+  isRefreshing?: boolean;
 }
 
 const FILE_SLOTS: {
@@ -112,8 +116,12 @@ export function IngestionSidebar({
   onSaveManualOverride,
   onRemoveManualOverride,
   onClearAllOverrides,
+  selectedIds = [],
+  activeBatchLabel = null,
+  idSectionPulseKey = 0,
+  isRefreshing = false,
 }: IngestionSidebarProps) {
-  const [copiedKey, setCopiedKey] = useState<'status' | 'na' | null>(null);
+  const [copiedKey, setCopiedKey] = useState<'status' | 'na' | 'selected' | null>(null);
   const [quoteSqlStrings, setQuoteSqlStrings] = useState(false);
   const [overrideError, setOverrideError] = useState<string | null>(null);
 
@@ -130,7 +138,7 @@ export function IngestionSidebar({
     return ids.map((id) => `'${id}'`).join(',');
   };
 
-  const handleCopy = async (kind: 'status' | 'na', text: string) => {
+  const handleCopy = async (kind: 'status' | 'na' | 'selected', text: string) => {
     if (!text) return;
     try {
       await navigator.clipboard.writeText(text);
@@ -155,7 +163,7 @@ export function IngestionSidebar({
     const cleanId = manualIdInput.trim();
     const cleanStatus = manualStatusInput.trim();
     if (!cleanId) {
-      setOverrideError('Informe o ID do pacote para aplicar o status manual.');
+      setOverrideError('Informe o ID ou cole uma lista de IDs para aplicar o status manual.');
       return;
     }
     if (!cleanStatus) {
@@ -258,8 +266,11 @@ export function IngestionSidebar({
               onClick={onReprocess}
               className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-semibold text-white bg-indigo-600 rounded-md hover:bg-indigo-700 whitespace-nowrap"
             >
-              <RefreshCw className="w-3.5 h-3.5" aria-hidden="true" />
-              <span>Processar / Atualizar</span>
+              <RefreshCw
+                className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`}
+                aria-hidden="true"
+              />
+              <span>{isRefreshing ? 'Atualizando...' : 'Processar / Atualizar'}</span>
             </button>
             <button
               type="button"
@@ -281,7 +292,10 @@ export function IngestionSidebar({
         </div>
 
         {summary.totalFaltantesBruto > 0 && (
-          <div className="pt-3 border-t border-slate-100 text-xs text-slate-600 space-y-1 tabular-nums">
+          <div
+            key={`summary-${idSectionPulseKey}-${summary.totalSorting}-${summary.totalOutrosStatus}`}
+            className="pt-3 border-t border-slate-100 text-xs text-slate-600 space-y-1 tabular-nums rounded animate-sortflow-flash"
+          >
             <div className="flex justify-between">
               <span>Faltantes (Na estação + Inbound):</span>
               <span className="font-mono font-semibold text-slate-900">
@@ -318,6 +332,52 @@ export function IngestionSidebar({
             />
             <span>Aspas &apos;ID&apos;</span>
           </label>
+        </div>
+
+        <div
+          key={`selected-ids-${idSectionPulseKey}`}
+          data-testid="sidebar-selected-ids-box"
+          className={`space-y-1.5 rounded-md p-2.5 border transition-colors ${
+            selectedIds.length > 0
+              ? 'border-indigo-200 bg-indigo-50/40 animate-sortflow-flash'
+              : 'border-slate-200/80 bg-slate-50/60'
+          }`}
+        >
+          <div className="flex items-center justify-between gap-2">
+            <label htmlFor="bq-selected-ids" className="text-xs font-semibold text-indigo-950 truncate">
+              Lote / Selecionados ({selectedIds.length})
+              {activeBatchLabel ? ` · ${activeBatchLabel}` : ''}
+            </label>
+            <button
+              type="button"
+              disabled={selectedIds.length === 0}
+              onClick={() => handleCopy('selected', formatForCopy(selectedIds, selectedIds.join(',')))}
+              className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold text-indigo-700 bg-white border border-indigo-200 rounded hover:bg-indigo-100 disabled:opacity-45 disabled:cursor-not-allowed shrink-0"
+            >
+              {copiedKey === 'selected' ? (
+                <>
+                  <Check className="w-3 h-3" aria-hidden="true" />
+                  <span>Copiado</span>
+                </>
+              ) : (
+                <>
+                  <Copy className="w-3 h-3" aria-hidden="true" />
+                  <span>Copiar</span>
+                </>
+              )}
+            </button>
+          </div>
+          <textarea
+            id="bq-selected-ids"
+            readOnly
+            rows={2}
+            value={
+              selectedIds.length > 0
+                ? formatForCopy(selectedIds, selectedIds.join(','))
+                : 'Clique em um lote ou marque checkboxes para atualizar os IDs selecionados aqui.'
+            }
+            className="w-full px-2.5 py-1.5 font-mono text-[11px] bg-white border border-slate-200 rounded text-slate-800 resize-none focus:outline-none focus:ring-2 focus:ring-indigo-600"
+          />
         </div>
 
         <div className="space-y-1.5">
@@ -419,13 +479,13 @@ export function IngestionSidebar({
         </div>
 
         <p className="text-[11px] text-slate-500">
-          O status manual sempre vence o status vindo do arquivo e atualiza as tabelas na hora.
+          O status manual sempre vence o status do arquivo. Aceita 1 ID ou vários IDs colados separados por vírgula.
         </p>
 
         <form onSubmit={handleOverrideSubmit} className="space-y-2.5">
           <div>
             <label htmlFor="manual-override-id" className="block text-xs font-medium text-slate-700 mb-1">
-              ID do pacote
+              ID(s) do pacote
             </label>
             <input
               id="manual-override-id"
@@ -433,7 +493,7 @@ export function IngestionSidebar({
               type="text"
               value={manualIdInput}
               onChange={(e) => onChangeManualIdInput(e.target.value)}
-              placeholder="Ex: 4401928301"
+              placeholder="Ex: 4401928301 ou 4401928301,4401928302"
               className="w-full px-3 py-1.5 font-mono text-xs bg-slate-50 border border-slate-200 rounded text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:bg-white"
             />
             <datalist id="known-package-ids">

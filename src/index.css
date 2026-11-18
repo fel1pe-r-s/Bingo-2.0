@@ -26,6 +26,58 @@
   font-variant-numeric: tabular-nums;
 }
 
+button {
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease,
+    color 150ms ease,
+    opacity 150ms ease,
+    transform 120ms ease,
+    box-shadow 150ms ease;
+}
+
+button:not(:disabled):active {
+  transform: scale(0.98);
+}
+
+@keyframes sortflow-progress {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(220%);
+  }
+}
+
+@keyframes sortflow-flash {
+  0% {
+    background-color: rgba(99, 102, 241, 0.16);
+    box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
+  }
+  100% {
+    background-color: transparent;
+    box-shadow: 0 0 0 0 rgba(99, 102, 241, 0);
+  }
+}
+
+.animate-sortflow-progress {
+  animation: sortflow-progress 420ms cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+
+.animate-sortflow-flash {
+  animation: sortflow-flash 650ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  button:not(:disabled):active {
+    transform: none;
+  }
+  .animate-sortflow-progress,
+  .animate-sortflow-flash {
+    animation: none;
+  }
+}
+
 @media print {
   @page {
     size: landscape;

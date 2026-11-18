@@ -14,9 +14,6 @@ export function KpiStrip({
   filteredValue,
   hasActiveRouteOrSearchFilter,
 }: KpiStripProps) {
-  const displayCount = hasActiveRouteOrSearchFilter && filteredCount !== undefined ? filteredCount : summary.totalSorting;
-  const displayValue = hasActiveRouteOrSearchFilter && filteredValue !== undefined ? filteredValue : summary.totalValorSorting;
-
   const primaryLabel = summary.hasStatusFile ? 'Sorting' : 'Pendentes';
 
   return (
@@ -26,31 +23,35 @@ export function KpiStrip({
     >
       <div className="px-5 py-4">
         <p className="text-xs font-medium text-slate-500">
-          {hasActiveRouteOrSearchFilter ? `${primaryLabel} (Filtro Atual)` : `Pacotes (${primaryLabel})`}
+          Pacotes ({primaryLabel} · Geral)
         </p>
         <p
           data-testid="kpi-sorting-count"
           className="mt-1 font-mono text-2xl font-semibold text-slate-900 tabular-nums"
         >
-          {displayCount}
+          {summary.totalSorting}
         </p>
         <p className="mt-1 text-xs text-slate-500 tabular-nums">
-          {summary.totalFaltantesFiltrados} válidos na estação · {summary.totalOutrosStatus} outros status
+          {hasActiveRouteOrSearchFilter && filteredCount !== undefined
+            ? `Filtro atual: ${filteredCount} ${filteredCount === 1 ? 'pacote' : 'pacotes'} · ${summary.totalFaltantesFiltrados} na estação`
+            : `${summary.totalFaltantesFiltrados} válidos na estação · ${summary.totalOutrosStatus} outros status`}
         </p>
       </div>
 
       <div className="px-5 py-4">
         <p className="text-xs font-medium text-slate-500">
-          {hasActiveRouteOrSearchFilter ? 'Valor Total (Filtro Atual)' : `Valor Total (${primaryLabel})`}
+          Valor Total ({primaryLabel} · Geral)
         </p>
         <p
           data-testid="kpi-sorting-value"
           className="mt-1 font-mono text-2xl font-semibold text-slate-900 tabular-nums"
         >
-          {formatCurrencyBRL(displayValue)}
+          {formatCurrencyBRL(summary.totalValorSorting)}
         </p>
-        <p className="mt-1 text-xs text-slate-500">
-          {summary.hasStatusFile
+        <p className="mt-1 text-xs text-slate-500 tabular-nums">
+          {hasActiveRouteOrSearchFilter && filteredValue !== undefined
+            ? `Filtro atual: ${formatCurrencyBRL(filteredValue)}`
+            : summary.hasStatusFile
             ? 'Soma dos itens com valor válido'
             : 'Arquivo status ausente · padrão pendente'}
         </p>

@@ -23,25 +23,22 @@ import {
   exportResumoToCSV,
   exportResumoToExcel,
 } from './utils/exporters';
-import {
-  buildIdBatches,
-  copyTextToClipboard,
-  getAllTopNIdsFromGroups,
-  getTopNIds,
-} from './utils/idChunker';
+import { formatIdsForClipboard, parseBatchIdsInput } from './utils/batches';
+import { copyTextToClipboard } from './utils/idChunker';
 import { getDemoDatasetStrings } from './data/demoData';
 import { Header } from './components/Header';
 import { FileSlotKey, IngestionSidebar } from './components/IngestionSidebar';
 import { KpiStrip } from './components/KpiStrip';
 import { TableToolbar } from './components/TableToolbar';
+import { BatchIdCopier } from './components/BatchIdCopier';
 import { PackagesTable } from './components/PackagesTable';
 import { ResumoView } from './components/ResumoView';
 import { RoutesView } from './components/RoutesView';
 import { OtherStatusView } from './components/OtherStatusView';
 import { PrintSheet } from './components/PrintSheet';
 import { UsageGuideModal } from './components/UsageGuideModal';
-import { CopyIdsModal } from './components/CopyIdsModal';
-import { Check, Database, Link2, Upload } from 'lucide-react';
+import { RouteValueReport } from './components/RouteValueReport';
+import { Check, Copy, Database, Link2, Upload } from 'lucide-react';
 
 const STORAGE_OVERRIDES_KEY = 'sortflow_manual_overrides_v1';
 const STORAGE_COLUMNS_KEY = 'sortflow_visible_columns_v1';
@@ -169,9 +166,36 @@ export default function App() {
   const [printGeneratedAt, setPrintGeneratedAt] = useState<string>('');
   const [processTick, setProcessTick] = useState(0);
 
-  const [copyIdsModalOpen, setCopyIdsModalOpen] = useState(false);
-  const [copyIdsModalInitialTab, setCopyIdsModalInitialTab] = useState<'batches' | 'top7' | 'current'>('batches');
-  const [copiedBatchLabel, setCopiedBatchLabel] = useState<string | null>(null);
+  const [copiedBatchKeys, setCopiedBatchKeys] = useState<string[]>([]);
+  const [activeBatchSessionKey, setActiveBatchSessionKey] = useState<string | null>(null);
+  const [activeBatchLabel, setActiveBatchLabel] = useState<string | null>(null);
+  const [selectedRowIds, setSelectedRowIds] = useState<string[]>([]);
+  const [showOnlySelected, setShowOnlySelected] = useState<boolean>(false);
+  const [selectionScopeIds, setSelectionScopeIds] = useState<string[]>([]);
+  const [selectionTargetStatus, setSelectionTargetStatus] = useState<string>('problem_solving');
+
+  const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
+  const [idSectionPulseKey, setIdSectionPulseKey] = useState<number>(0);
+  const refreshTimerRef = useRef<number | null>(null);
+
+  const triggerSmoothRefresh = useCallback(() => {
+    if (refreshTimerRef.current !== null) {
+      window.clearTimeout(refreshTimerRef.current);
+    }
+    setIsRefreshing(true);
+    refreshTimerRef.current = window.setTimeout(() => {
+      setIsRefreshing(false);
+      refreshTimerRef.current = null;
+    }, 260);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (refreshTimerRef.current !== null) {
+        window.clearTimeout(refreshTimerRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     try {
@@ -224,11 +248,20 @@ export default function App() {
     setSelectedRouteFilter('ALL');
     setSearchQuery('');
     setSelectedRouteTabName(null);
+    setCopiedBatchKeys([]);
+    setActiveBatchSessionKey(null);
+    setActiveBatchLabel(null);
+    setSelectedRowIds([]);
+    setManualIdInput('');
+    setShowOnlySelected(false);
+    setSelectionScopeIds([]);
+    setIdSectionPulseKey((k) => k + 1);
+    triggerSmoothRefresh();
     setFeedbackBanner({
       type: 'info',
       text: `Dados de exemplo processados: ${f.stats.validRows} pacotes válidos na estação.`,
     });
-  }, []);
+  }, [triggerSmoothRefresh]);
 
   useEffect(() => {
     if (shouldAutostart && !savedDataset?.faltantes?.length) {
@@ -272,6 +305,15 @@ export default function App() {
         }
         setFaltantes(parsed.records);
         setSelectedRouteFilter('ALL');
+        setCopiedBatchKeys([]);
+        setActiveBatchSessionKey(null);
+        setActiveBatchLabel(null);
+        setSelectedRowIds([]);
+        setManualIdInput('');
+        setShowOnlySelected(false);
+        setSelectionScopeIds([]);
+        setIdSectionPulseKey((k) => k + 1);
+        triggerSmoothRefresh();
         setFeedbackBanner({
           type: 'info',
           text: `${file.name} carregado: ${parsed.stats.validRows} de ${parsed.stats.totalRows} linhas passaram no filtro (Inbound + Na estação).`,
@@ -284,6 +326,7 @@ export default function App() {
           return;
         }
         setDetalhesValor(parsed.records);
+        triggerSmoothRefresh();
         setFeedbackBanner({
           type: 'info',
           text: `${file.name} carregado com ${parsed.stats.validRows} registros de detalhes.`,
@@ -296,6 +339,7 @@ export default function App() {
           return;
         }
         setStatusRecords(parsed.records);
+        triggerSmoothRefresh();
         setFeedbackBanner({
           type: 'info',
           text: `${file.name} carregado com ${parsed.stats.validRows} registros de status.`,
@@ -308,6 +352,7 @@ export default function App() {
           return;
         }
         setDetalhesNA(parsed.records);
+        triggerSmoothRefresh();
         setFeedbackBanner({
           type: 'info',
           text: `${file.name} carregado com ${parsed.stats.validRows} detalhes complementares N/A.`,
@@ -327,6 +372,7 @@ export default function App() {
     if (slot === 'detalhesValor') setDetalhesValor([]);
     if (slot === 'status') setStatusRecords([]);
     if (slot === 'detalhesNA') setDetalhesNA([]);
+    triggerSmoothRefresh();
   };
 
   const handleResetAll = () => {
@@ -338,10 +384,20 @@ export default function App() {
     setSelectedRouteFilter('ALL');
     setSearchQuery('');
     setSelectedRouteTabName(null);
+    setCopiedBatchKeys([]);
+    setActiveBatchSessionKey(null);
+    setActiveBatchLabel(null);
+    setSelectedRowIds([]);
+    setManualIdInput('');
+    setShowOnlySelected(false);
+    setSelectionScopeIds([]);
+    setIdSectionPulseKey((k) => k + 1);
+    triggerSmoothRefresh();
     setFeedbackBanner({ type: 'info', text: 'Arquivos limpos. Pronto para novo upload.' });
   };
 
   const handleToggleColumn = (col: ColumnKey) => {
+    triggerSmoothRefresh();
     setVisibleColumns((prev) => {
       if (prev.includes(col)) {
         if (prev.length === 1) return prev;
@@ -351,29 +407,59 @@ export default function App() {
     });
   };
 
-  const handleSaveManualOverride = (rawId: string, rawStatus: string) => {
-    const cleanId = normalizeId(rawId);
+  const normalizeStatusInput = (rawStatus: string) => {
     const cleanStatus = rawStatus.trim();
-    if (!cleanId || !cleanStatus) return;
-
     const lower = cleanStatus.toLowerCase();
-    const normalizedStatus =
-      lower === 'sorting' || lower === 'problem_solving' || lower === 'pendente'
-        ? lower
-        : cleanStatus;
+    return lower === 'sorting' || lower === 'problem_solving' || lower === 'pendente'
+      ? lower
+      : cleanStatus;
+  };
 
-    setManualOverrides((prev) => ({
-      ...prev,
-      [cleanId]: {
-        status: normalizedStatus,
-        updatedAt: formatDateBR(new Date()),
-      },
-    }));
-    setManualIdInput('');
+  const handleSaveBatchManualOverride = (rawIds: string[], rawStatus: string) => {
+    const cleanIds = Array.from(
+      new Set(rawIds.map((id) => normalizeId(id)).filter(Boolean))
+    );
+    const normalizedStatus = normalizeStatusInput(rawStatus);
+    if (cleanIds.length === 0 || !normalizedStatus) return;
+
+    const timestamp = formatDateBR(new Date());
+    setManualOverrides((prev) => {
+      const next = { ...prev };
+      for (const id of cleanIds) {
+        next[id] = {
+          status: normalizedStatus,
+          updatedAt: timestamp,
+        };
+      }
+      return next;
+    });
+
+    const updatedSet = new Set(cleanIds);
+    const remainingIds = selectedRowIds.filter((id) => !updatedSet.has(id));
+    setSelectedRowIds(remainingIds);
+    setManualIdInput(remainingIds.join(','));
+    setSelectionScopeIds((prev) => prev.filter((id) => !updatedSet.has(id)));
+    setShowOnlySelected(false);
+    setActiveBatchSessionKey(null);
+    setActiveBatchLabel(null);
+    setIdSectionPulseKey((k) => k + 1);
+    triggerSmoothRefresh();
     setFeedbackBanner({
       type: 'info',
-      text: `Status do pacote ${cleanId} atualizado manualmente para "${normalizedStatus}".`,
+      text:
+        cleanIds.length === 1
+          ? `Status do pacote ${cleanIds[0]} atualizado manualmente para "${normalizedStatus}".`
+          : `Status de ${cleanIds.length} pacotes atualizado manualmente para "${normalizedStatus}".`,
     });
+  };
+
+  const handleSaveManualOverride = (rawIdsInput: string, rawStatus: string) => {
+    const parsedIds = parseBatchIdsInput(rawIdsInput);
+    const normalizedStatus = normalizeStatusInput(rawStatus);
+    if (parsedIds.length === 0 || !normalizedStatus) return;
+
+    handleSaveBatchManualOverride(parsedIds, normalizedStatus);
+    setManualIdInput('');
   };
 
   const handleRemoveManualOverride = (id: string) => {
@@ -382,40 +468,96 @@ export default function App() {
       delete next[id];
       return next;
     });
+    triggerSmoothRefresh();
     setFeedbackBanner({
       type: 'info',
       text: `Override manual removido para ${id}.`,
     });
   };
 
-  const handleCopyBatch = async (ids: string[], label: string) => {
-    await copyTextToClipboard(ids.join(','));
-    setCopiedBatchLabel(label);
-    setTimeout(() => setCopiedBatchLabel(null), 2000);
+  const handleCopyBatch = async (
+    batchKey: string,
+    label: string,
+    ids: string[],
+    formattedText: string
+  ) => {
+    await copyTextToClipboard(formattedText);
+    setCopiedBatchKeys((prev) => (prev.includes(batchKey) ? prev : [...prev, batchKey]));
+    setActiveBatchSessionKey(batchKey);
+    setActiveBatchLabel(label);
+    setSelectedRowIds(ids);
+    setManualIdInput(ids.join(','));
+    setIdSectionPulseKey((k) => k + 1);
+    if (showOnlySelected) {
+      setSelectionScopeIds(ids);
+    }
+    triggerSmoothRefresh();
+    setFeedbackBanner({
+      type: 'info',
+      text: `${ids.length} IDs copiados (${label}) e atualizados na seção de IDs. Desmarque os que não deseja alterar antes de atualizar.`,
+    });
   };
 
-  const handleCopyTop7Route = async () => {
-    if (!activeRouteTop7.ids.length) return;
-    await copyTextToClipboard(activeRouteTop7.idString);
-    setCopiedBatchLabel('top7');
-    setTimeout(() => setCopiedBatchLabel(null), 2000);
+  const handleToggleSelectId = (id: string) => {
+    const nextIds = selectedRowIds.includes(id)
+      ? selectedRowIds.filter((item) => item !== id)
+      : [...selectedRowIds, id];
+    setSelectedRowIds(nextIds);
+    setManualIdInput(nextIds.join(','));
+    setIdSectionPulseKey((k) => k + 1);
   };
 
-  const handleCopyAllFiltered = async () => {
-    const ids = filteredPrincipalPackages.map((p) => p.id).join(',');
-    await copyTextToClipboard(ids);
-    setCopiedBatchLabel('all-filtered');
-    setTimeout(() => setCopiedBatchLabel(null), 2000);
+  const handleToggleSelectAll = (tableIds: string[]) => {
+    if (tableIds.length === 0) return;
+    const prevSet = new Set(selectedRowIds);
+    const allSelected = tableIds.every((id) => prevSet.has(id));
+    let nextIds: string[];
+    if (allSelected) {
+      const removeSet = new Set(tableIds);
+      nextIds = selectedRowIds.filter((id) => !removeSet.has(id));
+    } else {
+      nextIds = [...selectedRowIds];
+      for (const id of tableIds) {
+        if (!prevSet.has(id)) nextIds.push(id);
+      }
+    }
+    setSelectedRowIds(nextIds);
+    setManualIdInput(nextIds.join(','));
+    setIdSectionPulseKey((k) => k + 1);
   };
 
-  const handleCopyTop7All = async () => {
-    const all = getAllTopNIdsFromGroups(result.routeGroups, 7);
-    await copyTextToClipboard(all.idString);
+  const handleClearSelection = () => {
+    setSelectedRowIds([]);
+    setManualIdInput('');
+    setSelectionScopeIds([]);
+    setShowOnlySelected(false);
+    setActiveBatchSessionKey(null);
+    setActiveBatchLabel(null);
+    setIdSectionPulseKey((k) => k + 1);
   };
 
-  const handleOpenCopyModal = (tab: 'batches' | 'top7' | 'current' = 'batches') => {
-    setCopyIdsModalInitialTab(tab);
-    setCopyIdsModalOpen(true);
+  const handleToggleShowOnlySelected = () => {
+    triggerSmoothRefresh();
+    setShowOnlySelected((prev) => {
+      const next = !prev;
+      if (next) {
+        setSelectionScopeIds([...selectedRowIds]);
+      } else {
+        setSelectionScopeIds([]);
+      }
+      return next;
+    });
+  };
+
+  const handleCopySelectedIds = async () => {
+    if (selectedRowIds.length === 0) return;
+    const text = formatIdsForClipboard(selectedRowIds, false);
+    await copyTextToClipboard(text);
+    setIdSectionPulseKey((k) => k + 1);
+    setFeedbackBanner({
+      type: 'info',
+      text: `${selectedRowIds.length} IDs marcados copiados para a área de transferência.`,
+    });
   };
 
   const handleQuickOverride = (id: string, currentStatus: string) => {
@@ -498,25 +640,18 @@ export default function App() {
     });
   }, [result.sortingPackages, selectedRouteFilter, searchQuery]);
 
+  const displayedPrincipalPackages = useMemo(() => {
+    if (!isSharedMode && showOnlySelected && selectionScopeIds.length > 0) {
+      const scopeSet = new Set(selectionScopeIds);
+      return filteredPrincipalPackages.filter((pkg) => scopeSet.has(pkg.id));
+    }
+    return filteredPrincipalPackages;
+  }, [isSharedMode, showOnlySelected, selectionScopeIds, filteredPrincipalPackages]);
+
   const filteredPrincipalValue = useMemo(
     () => filteredPrincipalPackages.reduce((acc, p) => acc + (p.valor ?? 0), 0),
     [filteredPrincipalPackages]
   );
-
-  const activeRouteGroup = useMemo(() => {
-    if (selectedRouteFilter === 'ALL') return null;
-    return result.routeGroups.find((g) => g.rota === selectedRouteFilter) ?? null;
-  }, [selectedRouteFilter, result.routeGroups]);
-
-  const activeRouteBatches = useMemo(() => {
-    if (!activeRouteGroup) return [];
-    return buildIdBatches(activeRouteGroup.packages, 5);
-  }, [activeRouteGroup]);
-
-  const activeRouteTop7 = useMemo(() => {
-    if (!activeRouteGroup) return { count: 0, ids: [], idString: '' };
-    return getTopNIds(activeRouteGroup.packages, 7);
-  }, [activeRouteGroup]);
 
   const hasData = faltantes.length > 0;
   const activePrintRouteGroup = useMemo(() => {
@@ -524,11 +659,42 @@ export default function App() {
     return result.routeGroups.find((g) => g.rota === printRouteTarget) ?? null;
   }, [printRouteTarget, result.routeGroups]);
 
+  const handleChangeTab = (tab: ActiveTab) => {
+    if (tab !== activeTab) {
+      triggerSmoothRefresh();
+    }
+    setActiveTab(tab);
+  };
+
+  const handleChangeRouteFilter = (route: string) => {
+    if (route !== selectedRouteFilter) {
+      triggerSmoothRefresh();
+    }
+    setSelectedRouteFilter(route);
+  };
+
+  const handleSelectRouteTab = (route: string) => {
+    if (route !== selectedRouteTabName) {
+      triggerSmoothRefresh();
+    }
+    setSelectedRouteTabName(route);
+  };
+
   return (
     <div id="top" className="min-h-screen flex flex-col bg-slate-50 text-slate-900">
+      {isRefreshing && (
+        <div
+          data-testid="refresh-progress-bar"
+          aria-hidden="true"
+          className="no-print fixed top-0 left-0 right-0 z-50 h-0.5 bg-indigo-100 overflow-hidden pointer-events-none"
+        >
+          <div className="h-full w-1/3 bg-indigo-600 animate-sortflow-progress" />
+        </div>
+      )}
+
       <Header
         activeTab={activeTab}
-        onChangeTab={setActiveTab}
+        onChangeTab={handleChangeTab}
         isSharedMode={isSharedMode}
         onToggleSharedMode={handleToggleSharedMode}
         counts={{
@@ -598,6 +764,7 @@ export default function App() {
               onClearFile={handleClearFile}
               onReprocess={() => {
                 setProcessTick((t) => t + 1);
+                triggerSmoothRefresh();
                 setFeedbackBanner({
                   type: 'info',
                   text: `Reprocessamento concluído: ${result.summary.totalSorting} pacotes exibidos na tela Principal.`,
@@ -620,12 +787,21 @@ export default function App() {
               onRemoveManualOverride={handleRemoveManualOverride}
               onClearAllOverrides={() => {
                 setManualOverrides({});
+                triggerSmoothRefresh();
                 setFeedbackBanner({ type: 'info', text: 'Todos os overrides manuais foram removidos.' });
               }}
+              selectedIds={selectedRowIds}
+              activeBatchLabel={activeBatchLabel}
+              idSectionPulseKey={idSectionPulseKey}
+              isRefreshing={isRefreshing}
             />
           )}
 
-          <div className="flex-1 min-w-0 w-full space-y-5">
+          <div
+            className={`flex-1 min-w-0 w-full space-y-5 transition-all duration-200 ease-out ${
+              isRefreshing ? 'opacity-75 translate-y-[2px]' : 'opacity-100 translate-y-0'
+            }`}
+          >
             {!hasData ? (
               <section className="bg-white border border-slate-200 rounded-lg px-8 py-14 text-center max-w-2xl mx-auto">
                 <div className="w-11 h-11 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center mx-auto mb-4">
@@ -669,14 +845,30 @@ export default function App() {
                   }
                 />
 
+                <RouteValueReport
+                  routeGroups={result.routeGroups}
+                  summary={result.summary}
+                  selectedRouteFilter={
+                    activeTab === 'principal' || isSharedMode ? selectedRouteFilter : 'ALL'
+                  }
+                  onSelectRoute={
+                    activeTab === 'principal' || isSharedMode
+                      ? handleChangeRouteFilter
+                      : undefined
+                  }
+                  onCopiedReport={(message) =>
+                    setFeedbackBanner({ type: 'info', text: message })
+                  }
+                />
+
                 {(isSharedMode || activeTab === 'principal') && (
-                  <div className="space-y-4">
+                  <div className="space-y-3">
                     <TableToolbar
                       visibleColumns={visibleColumns}
                       onToggleColumn={handleToggleColumn}
                       routeOptions={routeNames}
                       selectedRoute={selectedRouteFilter}
-                      onChangeRoute={setSelectedRouteFilter}
+                      onChangeRoute={handleChangeRouteFilter}
                       searchQuery={searchQuery}
                       onChangeSearch={setSearchQuery}
                       onExportCsv={() =>
@@ -694,71 +886,237 @@ export default function App() {
                           'sorting_principal.xlsx'
                         )
                       }
-                      onPrintCurrentRoute={
-                        selectedRouteFilter !== 'ALL'
-                          ? () => triggerPrint('current-route', selectedRouteFilter)
-                          : undefined
+                      onPrintCurrentRoute={() =>
+                        triggerPrint('current-route', selectedRouteFilter)
                       }
+                      disableRoutePrint={selectedRouteFilter === 'ALL'}
                       onPrintAllRoutes={
                         result.routeGroups.length > 0
                           ? () => triggerPrint('all-routes-principal')
                           : undefined
                       }
                       printAllLabel="Imprimir todas as rotas"
-                      onOpenCopyModal={handleOpenCopyModal}
-                      activeRouteBatches={activeRouteBatches}
-                      activeRouteTop7Count={activeRouteTop7.count}
-                      activeRouteTotalCount={activeRouteGroup?.packages.length}
-                      onCopyBatch={handleCopyBatch}
-                      onCopyTop7={handleCopyTop7Route}
-                      onCopyAllFiltered={handleCopyAllFiltered}
-                      copiedBatchLabel={copiedBatchLabel}
-                      onCopyTop7All={handleCopyTop7All}
                     />
 
+                    {!isSharedMode && (
+                      <BatchIdCopier
+                        packages={filteredPrincipalPackages}
+                        defaultBatchSize={5}
+                        title="Lotes de IDs"
+                        selectedRouteFilter={selectedRouteFilter}
+                        copiedBatchKeys={copiedBatchKeys}
+                        activeBatchSessionKey={activeBatchSessionKey}
+                        onCopyBatch={handleCopyBatch}
+                      />
+                    )}
+
+                    {!isSharedMode && (selectedRowIds.length > 0 || showOnlySelected) && (
+                      <div
+                        data-testid="selection-action-bar"
+                        className="no-print bg-indigo-50/70 border border-indigo-200 rounded-lg px-4 py-2.5 flex flex-wrap items-center justify-between gap-3"
+                      >
+                        <div
+                          key={`sel-badge-${idSectionPulseKey}`}
+                          className="flex flex-wrap items-center gap-2 min-w-0 rounded px-1 -mx-1 animate-sortflow-flash"
+                        >
+                          <span className="text-xs font-semibold text-indigo-950 tabular-nums shrink-0">
+                            {selectedRowIds.length}{' '}
+                            {selectedRowIds.length === 1 ? 'selecionado' : 'selecionados'}
+                          </span>
+                          {activeBatchLabel && (
+                            <span className="text-xs text-indigo-800 truncate">
+                              · {activeBatchLabel}
+                            </span>
+                          )}
+                          {selectedRowIds.length > 0 && (
+                            <span className="font-mono text-[11px] text-indigo-700 bg-white/80 border border-indigo-200/80 rounded px-1.5 py-0.5 truncate max-w-[260px]">
+                              {selectedRowIds.join(',')}
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={handleToggleShowOnlySelected}
+                            aria-pressed={showOnlySelected}
+                            className={`px-2.5 py-1.5 text-xs font-semibold rounded border transition-colors whitespace-nowrap ${
+                              showOnlySelected
+                                ? 'bg-indigo-600 text-white border-indigo-600'
+                                : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                            }`}
+                          >
+                            {showOnlySelected ? 'Mostrando só lote' : 'Ver só selecionados'}
+                          </button>
+
+                          <button
+                            type="button"
+                            disabled={selectedRowIds.length === 0}
+                            onClick={handleCopySelectedIds}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-indigo-700 bg-white border border-indigo-200 rounded hover:bg-indigo-100/70 disabled:opacity-45"
+                          >
+                            <Copy className="w-3.5 h-3.5" aria-hidden="true" />
+                            <span>Copiar {selectedRowIds.length} IDs</span>
+                          </button>
+
+                          <label htmlFor="selection-target-status" className="text-xs font-medium text-slate-700">
+                            Alterar para:
+                          </label>
+                          <input
+                            id="selection-target-status"
+                            list="common-status-options"
+                            type="text"
+                            value={selectionTargetStatus}
+                            onChange={(e) => setSelectionTargetStatus(e.target.value)}
+                            className="w-36 px-2.5 py-1 text-xs bg-white border border-slate-200 rounded text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-600"
+                          />
+                          <button
+                            type="button"
+                            disabled={selectedRowIds.length === 0 || !selectionTargetStatus.trim()}
+                            onClick={() => {
+                              if (selectionTargetStatus.trim() && selectedRowIds.length > 0) {
+                                handleSaveBatchManualOverride(selectedRowIds, selectionTargetStatus);
+                              }
+                            }}
+                            className="px-3 py-1.5 text-xs font-semibold text-white bg-indigo-600 rounded hover:bg-indigo-700 disabled:opacity-45 whitespace-nowrap"
+                          >
+                            Atualizar {selectedRowIds.length}{' '}
+                            {selectedRowIds.length === 1 ? 'pacote' : 'pacotes'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleClearSelection}
+                            className="px-2 py-1 text-xs font-medium text-slate-600 hover:text-slate-900"
+                          >
+                            Limpar
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
                     <PackagesTable
-                      packages={filteredPrincipalPackages}
+                      packages={displayedPrincipalPackages}
                       visibleColumns={visibleColumns}
                       emptyTitle="Nenhum pacote encontrado para os filtros atuais"
                       emptyDescription="Verifique a aba 'Outros Status' ou ajuste a busca/filtro de rota."
                       allowInlineActions={!isSharedMode}
                       onQuickOverride={handleQuickOverride}
                       onRemoveOverride={handleRemoveManualOverride}
+                      selectedIds={isSharedMode ? undefined : selectedRowIds}
+                      onToggleSelectId={isSharedMode ? undefined : handleToggleSelectId}
+                      onToggleSelectAll={isSharedMode ? undefined : handleToggleSelectAll}
                     />
                   </div>
                 )}
 
                 {!isSharedMode && activeTab === 'resumo' && (
-                  <ResumoView
-                    resumoGroups={result.resumoGroups}
-                    visibleColumns={visibleColumns}
-                    onToggleColumn={handleToggleColumn}
-                    onExportCsv={() =>
-                      exportResumoToCSV(
-                        result.resumoGroups,
-                        visibleColumns,
-                        'sorting_resumo_top7.csv'
-                      )
-                    }
-                    onExportExcel={() =>
-                      exportResumoToExcel(
-                        result.resumoGroups,
-                        visibleColumns,
-                        'sorting_resumo_top7.xlsx'
-                      )
-                    }
-                    onPrintAllResumo={() => triggerPrint('all-routes-resumo')}
-                    onQuickOverride={handleQuickOverride}
-                    onRemoveOverride={handleRemoveManualOverride}
-                    onCopyTop7All={handleCopyTop7All}
-                  />
+                  <div className="space-y-4">
+                    {selectedRowIds.length > 0 && (
+                      <div
+                        data-testid="selection-action-bar"
+                        className="no-print bg-indigo-50/70 border border-indigo-200 rounded-lg px-4 py-2.5 flex flex-wrap items-center justify-between gap-3"
+                      >
+                        <div
+                          key={`sel-resumo-badge-${idSectionPulseKey}`}
+                          className="flex flex-wrap items-center gap-2 min-w-0 rounded px-1 -mx-1 animate-sortflow-flash"
+                        >
+                          <span className="text-xs font-semibold text-indigo-950 tabular-nums shrink-0">
+                            {selectedRowIds.length}{' '}
+                            {selectedRowIds.length === 1 ? 'selecionado' : 'selecionados'}
+                          </span>
+                          {activeBatchLabel && (
+                            <span className="text-xs text-indigo-800 truncate">
+                              · {activeBatchLabel}
+                            </span>
+                          )}
+                          {selectedRowIds.length > 0 && (
+                            <span className="font-mono text-[11px] text-indigo-700 bg-white/80 border border-indigo-200/80 rounded px-1.5 py-0.5 truncate max-w-[260px]">
+                              {selectedRowIds.join(',')}
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={handleCopySelectedIds}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-indigo-700 bg-white border border-indigo-200 rounded hover:bg-indigo-100/70"
+                          >
+                            <Copy className="w-3.5 h-3.5" aria-hidden="true" />
+                            <span>Copiar {selectedRowIds.length} IDs</span>
+                          </button>
+
+                          <label htmlFor="selection-target-status-resumo" className="text-xs font-medium text-slate-700">
+                            Alterar para:
+                          </label>
+                          <input
+                            id="selection-target-status-resumo"
+                            list="common-status-options"
+                            type="text"
+                            value={selectionTargetStatus}
+                            onChange={(e) => setSelectionTargetStatus(e.target.value)}
+                            className="w-36 px-2.5 py-1 text-xs bg-white border border-slate-200 rounded text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-600"
+                          />
+                          <button
+                            type="button"
+                            disabled={!selectionTargetStatus.trim()}
+                            onClick={() => {
+                              if (selectionTargetStatus.trim()) {
+                                handleSaveBatchManualOverride(selectedRowIds, selectionTargetStatus);
+                              }
+                            }}
+                            className="px-3 py-1.5 text-xs font-semibold text-white bg-indigo-600 rounded hover:bg-indigo-700 whitespace-nowrap"
+                          >
+                            Atualizar {selectedRowIds.length}{' '}
+                            {selectedRowIds.length === 1 ? 'pacote' : 'pacotes'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleClearSelection}
+                            className="px-2 py-1 text-xs font-medium text-slate-600 hover:text-slate-900"
+                          >
+                            Limpar
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    <ResumoView
+                      resumoGroups={result.resumoGroups}
+                      visibleColumns={visibleColumns}
+                      onToggleColumn={handleToggleColumn}
+                      onExportCsv={() =>
+                        exportResumoToCSV(
+                          result.resumoGroups,
+                          visibleColumns,
+                          'sorting_resumo_top7.csv'
+                        )
+                      }
+                      onExportExcel={() =>
+                        exportResumoToExcel(
+                          result.resumoGroups,
+                          visibleColumns,
+                          'sorting_resumo_top7.xlsx'
+                        )
+                      }
+                      onPrintAllResumo={() => triggerPrint('all-routes-resumo')}
+                      onQuickOverride={handleQuickOverride}
+                      onRemoveOverride={handleRemoveManualOverride}
+                      copiedBatchKeys={copiedBatchKeys}
+                      activeBatchSessionKey={activeBatchSessionKey}
+                      onCopyBatch={handleCopyBatch}
+                      selectedIds={selectedRowIds}
+                      onToggleSelectId={handleToggleSelectId}
+                      onToggleSelectAll={handleToggleSelectAll}
+                    />
+                  </div>
                 )}
 
                 {!isSharedMode && activeTab === 'rotas' && (
                   <RoutesView
                     routeGroups={result.routeGroups}
                     selectedRouteName={selectedRouteTabName}
-                    onSelectRoute={setSelectedRouteTabName}
+                    onSelectRoute={handleSelectRouteTab}
                     visibleColumns={visibleColumns}
                     onToggleColumn={handleToggleColumn}
                     onPrintCurrentRoute={(rota) => triggerPrint('current-route', rota)}
@@ -791,15 +1149,6 @@ export default function App() {
         currentRouteGroup={activePrintRouteGroup}
         allRouteGroups={result.routeGroups}
         resumoGroups={result.resumoGroups}
-      />
-
-      <CopyIdsModal
-        open={copyIdsModalOpen}
-        onClose={() => setCopyIdsModalOpen(false)}
-        routeGroups={result.routeGroups}
-        currentFilteredPackages={filteredPrincipalPackages}
-        initialTab={copyIdsModalInitialTab}
-        selectedRouteFilter={selectedRouteFilter}
       />
 
       <UsageGuideModal open={guideOpen} onClose={() => setGuideOpen(false)} />

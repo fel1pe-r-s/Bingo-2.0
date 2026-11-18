@@ -9,6 +9,9 @@ interface PackagesTableProps {
   allowInlineActions?: boolean;
   onQuickOverride?: (id: string, currentStatus: string) => void;
   onRemoveOverride?: (id: string) => void;
+  selectedIds?: string[];
+  onToggleSelectId?: (id: string) => void;
+  onToggleSelectAll?: (ids: string[]) => void;
 }
 
 function getStatusTextClass(status: string): string {
@@ -28,8 +31,16 @@ export function PackagesTable({
   allowInlineActions = false,
   onQuickOverride,
   onRemoveOverride,
+  selectedIds,
+  onToggleSelectId,
+  onToggleSelectAll,
 }: PackagesTableProps) {
   const activeCols = ALL_COLUMNS.filter((c) => visibleColumns.includes(c.key));
+  const isSelectable = Boolean(onToggleSelectId);
+  const selectedSet = new Set(selectedIds ?? []);
+  const tableIds = packages.map((p) => p.id);
+  const allChecked =
+    isSelectable && tableIds.length > 0 && tableIds.every((id) => selectedSet.has(id));
 
   if (packages.length === 0) {
     return (
@@ -46,6 +57,17 @@ export function PackagesTable({
         <table className="w-full text-left border-collapse">
           <thead>
             <tr className="bg-slate-50 border-b border-slate-200">
+              {isSelectable && (
+                <th scope="col" className="no-print w-10 px-3 py-2.5">
+                  <input
+                    type="checkbox"
+                    checked={allChecked}
+                    aria-label="Selecionar todos os pacotes desta tabela"
+                    onChange={() => onToggleSelectAll?.(tableIds)}
+                    className="w-3.5 h-3.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-600"
+                  />
+                </th>
+              )}
               {activeCols.map((col) => (
                 <th
                   key={col.key}
@@ -65,14 +87,31 @@ export function PackagesTable({
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 text-sm">
-            {packages.map((pkg) => (
-              <tr
-                key={pkg.id}
-                data-testid={`pkg-row-${pkg.id}`}
-                className={`hover:bg-slate-50/80 transition-colors ${
-                  pkg.isManualOverride ? 'bg-indigo-50/35' : ''
-                }`}
-              >
+            {packages.map((pkg) => {
+              const isRowSelected = selectedSet.has(pkg.id);
+              return (
+                <tr
+                  key={pkg.id}
+                  data-testid={`pkg-row-${pkg.id}`}
+                  className={`hover:bg-slate-50/80 transition-colors ${
+                    isRowSelected
+                      ? 'bg-indigo-50/60'
+                      : pkg.isManualOverride
+                      ? 'bg-indigo-50/35'
+                      : ''
+                  }`}
+                >
+                  {isSelectable && (
+                    <td className="no-print px-3 py-2.5">
+                      <input
+                        type="checkbox"
+                        checked={isRowSelected}
+                        aria-label={`Selecionar pacote ${pkg.id}`}
+                        onChange={() => onToggleSelectId?.(pkg.id)}
+                        className="w-3.5 h-3.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-600"
+                      />
+                    </td>
+                  )}
                 {activeCols.map((col) => {
                   switch (col.key) {
                     case 'id':
@@ -165,7 +204,8 @@ export function PackagesTable({
                   </td>
                 )}
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>

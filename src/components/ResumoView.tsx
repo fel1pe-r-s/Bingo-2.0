@@ -1,10 +1,11 @@
-import { useState } from 'react';
-import { Check, Copy } from 'lucide-react';
+import { useMemo, useState } from 'react';
 import { ColumnKey, RouteGroup } from '../types/logistics';
 import { formatCurrencyBRL } from '../utils/normalizers';
-import { copyTextToClipboard, getTopNIds } from '../utils/idChunker';
+import { formatIdsForClipboard } from '../utils/batches';
+import { BatchIdCopier } from './BatchIdCopier';
 import { PackagesTable } from './PackagesTable';
 import { TableToolbar } from './TableToolbar';
+import { Check, Copy } from 'lucide-react';
 
 interface ResumoViewProps {
   resumoGroups: RouteGroup[];
@@ -15,7 +16,12 @@ interface ResumoViewProps {
   onPrintAllResumo: () => void;
   onQuickOverride: (id: string, currentStatus: string) => void;
   onRemoveOverride: (id: string) => void;
-  onCopyTop7All?: () => void;
+  copiedBatchKeys: string[];
+  activeBatchSessionKey?: string | null;
+  onCopyBatch: (batchKey: string, label: string, ids: string[], formattedText: string) => void;
+  selectedIds: string[];
+  onToggleSelectId: (id: string) => void;
+  onToggleSelectAll: (ids: string[]) => void;
 }
 
 export function ResumoView({
@@ -27,24 +33,28 @@ export function ResumoView({
   onPrintAllResumo,
   onQuickOverride,
   onRemoveOverride,
-  onCopyTop7All,
+  copiedBatchKeys,
+  activeBatchSessionKey,
+  onCopyBatch,
+  selectedIds,
+  onToggleSelectId,
+  onToggleSelectAll,
 }: ResumoViewProps) {
-  const [copiedRouteKey, setCopiedRouteKey] = useState<string | null>(null);
-  const [copiedAll, setCopiedAll] = useState(false);
+  const [justCopiedRoute, setJustCopiedRoute] = useState<string | null>(null);
 
-  const handleCopyRouteTop7 = async (group: RouteGroup) => {
-    const top7 = getTopNIds(group.packages, 7);
-    await copyTextToClipboard(top7.idString);
-    setCopiedRouteKey(group.rota);
-    setTimeout(() => setCopiedRouteKey(null), 2000);
-  };
+  const flatResumoPackages = useMemo(
+    () => resumoGroups.flatMap((g) => g.packages),
+    [resumoGroups]
+  );
 
-  const handleCopyTop7All = async () => {
-    if (onCopyTop7All) {
-      onCopyTop7All();
-    }
-    setCopiedAll(true);
-    setTimeout(() => setCopiedAll(false), 2000);
+  const handleCopyRouteTop7 = (group: RouteGroup) => {
+    const ids = group.packages.map((p) => p.id);
+    if (ids.length === 0) return;
+    const text = formatIdsForClipboard(ids, false);
+    const batchKey = `resumo::${group.rota}::${ids.join(',')}`;
+    setJustCopiedRoute(group.rota);
+    setTimeout(() => setJustCopiedRoute(null), 1600);
+    onCopyBatch(batchKey, `Resumo · Rota ${group.rota} (${ids.length} IDs)`, ids, text);
   };
 
   return (
@@ -57,8 +67,15 @@ export function ResumoView({
         onPrintAllRoutes={onPrintAllResumo}
         printAllLabel="Imprimir todas as rotas (Top 7/página)"
         hideFilters
-        onCopyTop7All={resumoGroups.length > 0 ? handleCopyTop7All : undefined}
-        copiedTop7All={copiedAll}
+      />
+
+      <BatchIdCopier
+        packages={flatResumoPackages}
+        defaultBatchSize={7}
+        title="Lotes do Resumo (7 por rota)"
+        copiedBatchKeys={copiedBatchKeys}
+        activeBatchSessionKey={activeBatchSessionKey}
+        onCopyBatch={onCopyBatch}
       />
 
       {resumoGroups.length === 0 ? (
@@ -70,58 +87,72 @@ export function ResumoView({
         </div>
       ) : (
         <div className="space-y-6">
-          {resumoGroups.map((group) => (
-            <section
-              key={group.rota}
-              data-testid={`resumo-group-${group.rota}`}
-              className="space-y-2"
-            >
-              <div className="flex flex-wrap items-baseline justify-between gap-2 px-1">
-                <div className="flex items-baseline gap-2.5">
-                  <h3 className="font-display text-base font-bold text-slate-900">
-                    Rota {group.rota}
-                  </h3>
-                  <span className="text-xs text-slate-500 tabular-nums">
-                    Exibindo {group.packages.length} de {group.totalPackages} pacotes
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="font-mono text-xs font-semibold text-slate-700 tabular-nums">
-                    Subtotal (Top 7): {formatCurrencyBRL(group.totalValue)}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => handleCopyRouteTop7(group)}
-                    className={`inline-flex items-center gap-1.5 px-3 py-1 text-xs font-semibold rounded-md transition-colors ${
-                      copiedRouteKey === group.rota
-                        ? 'bg-emerald-600 text-white'
-                        : 'bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100'
-                    }`}
-                  >
-                    {copiedRouteKey === group.rota ? (
-                      <>
-                        <Check className="w-3.5 h-3.5" aria-hidden="true" />
-                        <span>Copiado!</span>
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="w-3.5 h-3.5" aria-hidden="true" />
-                        <span>Copiar {Math.min(group.packages.length, 7)} IDs</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-              </div>
+          {resumoGroups.map((group) => {
+            const remaining = Math.max(0, group.totalPackages - group.packages.length);
+            const routeKey = `resumo::${group.rota}::${group.packages.map((p) => p.id).join(',')}`;
+            const wasCopied = copiedBatchKeys.includes(routeKey);
+            const isJustCopied = justCopiedRoute === group.rota;
 
-              <PackagesTable
-                packages={group.packages}
-                visibleColumns={visibleColumns}
-                allowInlineActions
-                onQuickOverride={onQuickOverride}
-                onRemoveOverride={onRemoveOverride}
-              />
-            </section>
-          ))}
+            return (
+              <section
+                key={group.rota}
+                data-testid={`resumo-group-${group.rota}`}
+                className="space-y-2"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+                  <div className="flex flex-wrap items-baseline gap-2.5">
+                    <h3 className="font-display text-base font-bold text-slate-900">
+                      Rota {group.rota}
+                    </h3>
+                    <span className="text-xs text-slate-500 tabular-nums">
+                      Exibindo {group.packages.length} de {group.totalPackages} pacotes
+                      {remaining > 0 ? ` · ${remaining} aguardando próxima leva` : ''}
+                    </span>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-3">
+                    <span className="font-mono text-xs font-semibold text-slate-700 tabular-nums">
+                      Subtotal (Top 7): {formatCurrencyBRL(group.totalValue)}
+                    </span>
+                    <button
+                      type="button"
+                      data-testid={`resumo-copy-route-${group.rota}`}
+                      onClick={() => handleCopyRouteTop7(group)}
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded border transition-colors ${
+                        isJustCopied
+                          ? 'bg-emerald-600 text-white border-emerald-600'
+                          : wasCopied
+                          ? 'bg-slate-100 text-slate-700 border-slate-300 hover:bg-slate-200/70'
+                          : 'bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100'
+                      }`}
+                    >
+                      {isJustCopied || wasCopied ? (
+                        <Check className="w-3.5 h-3.5" aria-hidden="true" />
+                      ) : (
+                        <Copy className="w-3.5 h-3.5" aria-hidden="true" />
+                      )}
+                      <span>
+                        {isJustCopied
+                          ? `Copiado (${group.packages.length})`
+                          : `Copiar ${group.packages.length} IDs`}
+                      </span>
+                    </button>
+                  </div>
+                </div>
+
+                <PackagesTable
+                  packages={group.packages}
+                  visibleColumns={visibleColumns}
+                  allowInlineActions
+                  onQuickOverride={onQuickOverride}
+                  onRemoveOverride={onRemoveOverride}
+                  selectedIds={selectedIds}
+                  onToggleSelectId={onToggleSelectId}
+                  onToggleSelectAll={onToggleSelectAll}
+                />
+              </section>
+            );
+          })}
         </div>
       )}
     </div>

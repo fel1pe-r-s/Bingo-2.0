@@ -36,6 +36,9 @@ export function PrintSheet({
     modeSubtitle = 'Resumo Operacional · Primeiros 7 Pacotes por Rota';
   }
 
+  const overallTotalPackages = allRouteGroups.reduce((acc, g) => acc + g.totalPackages, 0);
+  const overallTotalValue = allRouteGroups.reduce((acc, g) => acc + g.totalValue, 0);
+
   return (
     <div id="print-sheet-root" className="hidden print-only text-slate-900 bg-white">
       {pages.map((group) => {
@@ -61,8 +64,13 @@ export function PrintSheet({
                   {printMode === 'all-routes-resumo' && group.totalPackages > group.packages.length
                     ? ` (de ${group.totalPackages} na rota)`
                     : ''}{' '}
-                  · Total: <span className="font-mono font-semibold">{formatCurrencyBRL(subtotal)}</span>
+                  · Total da rota: <span className="font-mono font-semibold">{formatCurrencyBRL(subtotal)}</span>
                 </p>
+                {printMode !== 'current-route' && (
+                  <p className="text-[11px] text-slate-600">
+                    Total Geral: <span className="font-mono font-semibold">{overallTotalPackages} pacotes · {formatCurrencyBRL(overallTotalValue)}</span>
+                  </p>
+                )}
               </div>
             </header>
 
