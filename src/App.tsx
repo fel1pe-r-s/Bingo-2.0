@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActiveTab,
   ALL_COLUMNS,
@@ -23,6 +23,12 @@ import {
   exportResumoToCSV,
   exportResumoToExcel,
 } from './utils/exporters';
+import {
+  buildIdBatches,
+  copyTextToClipboard,
+  getAllTopNIdsFromGroups,
+  getTopNIds,
+} from './utils/idChunker';
 import { getDemoDatasetStrings } from './data/demoData';
 import { Header } from './components/Header';
 import { FileSlotKey, IngestionSidebar } from './components/IngestionSidebar';
@@ -34,6 +40,7 @@ import { RoutesView } from './components/RoutesView';
 import { OtherStatusView } from './components/OtherStatusView';
 import { PrintSheet } from './components/PrintSheet';
 import { UsageGuideModal } from './components/UsageGuideModal';
+import { CopyIdsModal } from './components/CopyIdsModal';
 import { Check, Database, Link2, Upload } from 'lucide-react';
 
 const STORAGE_OVERRIDES_KEY = 'sortflow_manual_overrides_v1';
@@ -161,6 +168,10 @@ export default function App() {
   const [printRouteTarget, setPrintRouteTarget] = useState<string | null>(null);
   const [printGeneratedAt, setPrintGeneratedAt] = useState<string>('');
   const [processTick, setProcessTick] = useState(0);
+
+  const [copyIdsModalOpen, setCopyIdsModalOpen] = useState(false);
+  const [copyIdsModalInitialTab, setCopyIdsModalInitialTab] = useState<'batches' | 'top7' | 'current'>('batches');
+  const [copiedBatchLabel, setCopiedBatchLabel] = useState<string | null>(null);
 
   useEffect(() => {
     try {
@@ -377,6 +388,36 @@ export default function App() {
     });
   };
 
+  const handleCopyBatch = async (ids: string[], label: string) => {
+    await copyTextToClipboard(ids.join(','));
+    setCopiedBatchLabel(label);
+    setTimeout(() => setCopiedBatchLabel(null), 2000);
+  };
+
+  const handleCopyTop7Route = async () => {
+    if (!activeRouteTop7.ids.length) return;
+    await copyTextToClipboard(activeRouteTop7.idString);
+    setCopiedBatchLabel('top7');
+    setTimeout(() => setCopiedBatchLabel(null), 2000);
+  };
+
+  const handleCopyAllFiltered = async () => {
+    const ids = filteredPrincipalPackages.map((p) => p.id).join(',');
+    await copyTextToClipboard(ids);
+    setCopiedBatchLabel('all-filtered');
+    setTimeout(() => setCopiedBatchLabel(null), 2000);
+  };
+
+  const handleCopyTop7All = async () => {
+    const all = getAllTopNIdsFromGroups(result.routeGroups, 7);
+    await copyTextToClipboard(all.idString);
+  };
+
+  const handleOpenCopyModal = (tab: 'batches' | 'top7' | 'current' = 'batches') => {
+    setCopyIdsModalInitialTab(tab);
+    setCopyIdsModalOpen(true);
+  };
+
   const handleQuickOverride = (id: string, currentStatus: string) => {
     setManualIdInput(id);
     setManualStatusInput(currentStatus === 'sorting' ? 'problem_solving' : 'sorting');
@@ -461,6 +502,21 @@ export default function App() {
     () => filteredPrincipalPackages.reduce((acc, p) => acc + (p.valor ?? 0), 0),
     [filteredPrincipalPackages]
   );
+
+  const activeRouteGroup = useMemo(() => {
+    if (selectedRouteFilter === 'ALL') return null;
+    return result.routeGroups.find((g) => g.rota === selectedRouteFilter) ?? null;
+  }, [selectedRouteFilter, result.routeGroups]);
+
+  const activeRouteBatches = useMemo(() => {
+    if (!activeRouteGroup) return [];
+    return buildIdBatches(activeRouteGroup.packages, 5);
+  }, [activeRouteGroup]);
+
+  const activeRouteTop7 = useMemo(() => {
+    if (!activeRouteGroup) return { count: 0, ids: [], idString: '' };
+    return getTopNIds(activeRouteGroup.packages, 7);
+  }, [activeRouteGroup]);
 
   const hasData = faltantes.length > 0;
   const activePrintRouteGroup = useMemo(() => {
@@ -649,6 +705,15 @@ export default function App() {
                           : undefined
                       }
                       printAllLabel="Imprimir todas as rotas"
+                      onOpenCopyModal={handleOpenCopyModal}
+                      activeRouteBatches={activeRouteBatches}
+                      activeRouteTop7Count={activeRouteTop7.count}
+                      activeRouteTotalCount={activeRouteGroup?.packages.length}
+                      onCopyBatch={handleCopyBatch}
+                      onCopyTop7={handleCopyTop7Route}
+                      onCopyAllFiltered={handleCopyAllFiltered}
+                      copiedBatchLabel={copiedBatchLabel}
+                      onCopyTop7All={handleCopyTop7All}
                     />
 
                     <PackagesTable
@@ -685,6 +750,7 @@ export default function App() {
                     onPrintAllResumo={() => triggerPrint('all-routes-resumo')}
                     onQuickOverride={handleQuickOverride}
                     onRemoveOverride={handleRemoveManualOverride}
+                    onCopyTop7All={handleCopyTop7All}
                   />
                 )}
 
@@ -725,6 +791,15 @@ export default function App() {
         currentRouteGroup={activePrintRouteGroup}
         allRouteGroups={result.routeGroups}
         resumoGroups={result.resumoGroups}
+      />
+
+      <CopyIdsModal
+        open={copyIdsModalOpen}
+        onClose={() => setCopyIdsModalOpen(false)}
+        routeGroups={result.routeGroups}
+        currentFilteredPackages={filteredPrincipalPackages}
+        initialTab={copyIdsModalInitialTab}
+        selectedRouteFilter={selectedRouteFilter}
       />
 
       <UsageGuideModal open={guideOpen} onClose={() => setGuideOpen(false)} />
