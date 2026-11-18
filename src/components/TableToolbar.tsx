@@ -98,7 +98,7 @@ export function TableToolbar({
                   <option value="ALL">Todas as rotas ({routeOptions.length})</option>
                   {routeOptions.map((r) => (
                     <option key={r} value={r}>
-                      {r}
+                      {r.toLowerCase().startsWith('rota') ? r : `Rota ${r}`}
                     </option>
                   ))}
                 </select>

@@ -49,6 +49,7 @@ export type ManualOverrideMap = Record<string, ManualOverrideEntry>;
 export interface ProcessedPackage {
   id: string;
   rota: string;
+  rotaGrupo: string;
   dataTimestamp: number;
   dataIso: string;
   dataFormatada: string;

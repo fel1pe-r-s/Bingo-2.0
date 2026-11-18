@@ -48,6 +48,9 @@ export function UsageGuideModal({ open, onClose }: UsageGuideModalProps) {
           <li>
             <span className="font-semibold text-slate-900">Regra de Status e Override Manual</span>: Quando o arquivo <code className="font-mono text-xs bg-slate-100 px-1 py-0.5 rounded">status</code> está carregado, se <code className="font-mono text-xs bg-slate-100 px-1 py-0.5 rounded">SUB_STATUS</code> for <code className="font-mono text-xs bg-slate-100 px-1 py-0.5 rounded">sorting</code> ou <code className="font-mono text-xs bg-slate-100 px-1 py-0.5 rounded">problem_solving</code>, ele prevalece; caso contrário usa <code className="font-mono text-xs bg-slate-100 px-1 py-0.5 rounded">STATUS_SHP</code>. Overrides manuais sempre vencem os arquivos e ficam salvos na sessão local.
           </li>
+          <li>
+            <span className="font-semibold text-slate-900">Agrupamento Inteligente por Rota</span>: Códigos como <code className="font-mono text-xs bg-slate-100 px-1 py-0.5 rounded">A5_am1</code>, <code className="font-mono text-xs bg-slate-100 px-1 py-0.5 rounded">&gt;A5_am1</code>, <code className="font-mono text-xs bg-slate-100 px-1 py-0.5 rounded">A3</code>, <code className="font-mono text-xs bg-slate-100 px-1 py-0.5 rounded">&gt;A3</code> e <code className="font-mono text-xs bg-slate-100 px-1 py-0.5 rounded">&gt;A</code> são agrupados sob a mesma rota base (<code className="font-mono text-xs bg-slate-100 px-1 py-0.5 rounded">Rota A</code>), mantendo o código específico em cada linha. Na aba Resumo são exibidos os primeiros 7 pacotes de cada rota base (ordenados por data de inbound mais antiga).
+          </li>
         </ol>
 
         <div className="pt-3 border-t border-slate-200 flex justify-end">

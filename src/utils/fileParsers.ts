@@ -15,7 +15,7 @@ import {
 
 type GenericRow = Record<string, unknown>;
 
-function detectCsvDelimiter(headerLine: string): string {
+export function detectCsvDelimiter(headerLine: string): string {
   let commas = 0;
   let semis = 0;
   let tabs = 0;
@@ -134,14 +134,20 @@ export function parseJsonRows(content: string): GenericRow[] {
   } catch {
     const lines = clean.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
     if (lines.length > 0) {
-      const ndjsonRows: GenericRow[] = [];
-      for (const line of lines) {
-        const obj = JSON.parse(line);
-        if (typeof obj === 'object' && obj !== null) {
-          ndjsonRows.push(obj as GenericRow);
+      try {
+        const ndjsonRows: GenericRow[] = [];
+        for (const line of lines) {
+          const obj = JSON.parse(line);
+          if (typeof obj === 'object' && obj !== null) {
+            ndjsonRows.push(obj as GenericRow);
+          } else {
+            throw new Error('Not an object');
+          }
         }
+        if (ndjsonRows.length > 0) return ndjsonRows;
+      } catch {
+        // Fall through to descriptive error below
       }
-      if (ndjsonRows.length > 0) return ndjsonRows;
     }
   }
 

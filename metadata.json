@@ -1,6 +1,1 @@
-{
-  "name": "SortFlow — Controle Logístico de Sorting",
-  "description": "Aplicação web offline para processamento, filtragem, override manual e impressão de pacotes em sorting a partir de exportações do BigQuery.",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}
+{"name":"SortFlow — Controle Logístico de Sorting","description":"Aplicação web offline para processamento, filtragem, override manual e impressão de pacotes em sorting a partir de exportações do BigQuery.","requestFramePermissions":[],"majorCapabilities":["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]}

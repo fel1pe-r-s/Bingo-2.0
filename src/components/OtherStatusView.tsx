@@ -39,7 +39,8 @@ export function OtherStatusView({
         const matchId = p.id.toLowerCase().includes(q);
         const matchDesc = (p.descricao ?? '').toLowerCase().includes(q);
         const matchRota = p.rota.toLowerCase().includes(q);
-        if (!matchId && !matchDesc && !matchRota) return false;
+        const matchGrupo = p.rotaGrupo.toLowerCase().includes(q);
+        if (!matchId && !matchDesc && !matchRota && !matchGrupo) return false;
       }
       return true;
     });

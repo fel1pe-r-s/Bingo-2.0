@@ -206,3 +206,41 @@ export function resolveFinalStatus(subStatusRaw: unknown, statusShpRaw: unknown)
   }
   return shp;
 }
+
+/**
+ * Extracts the base route grouping identifier (the route letter) from a route string.
+ * Real-world BigQuery routes often contain formats like:
+ * - 'A5_am1', '>A5_am1', 'A3', '>A3', 'A', '>A' -> all grouped into 'A'
+ * - 'B2_am1', '>B2_am1', 'B' -> 'B'
+ * - 'AA1_am1', '>AA5' -> 'AA'
+ *
+ * Strips leading indicators ('>', '›', '»', '-') and words ('Rota', 'Route'),
+ * then extracts the leading letter group. Falls back safely if non-standard.
+ */
+export function extractRouteGroup(rawRota: unknown): string {
+  if (rawRota === null || rawRota === undefined) return 'Sem Rota';
+  let str = String(rawRota).trim();
+  if (!str || /^(null|undefined|-)$/i.test(str)) return 'Sem Rota';
+
+  // Strip words like "Rota", "Route", "R."
+  str = str.replace(/^(?:rota|route|r\.)\s*[-:]?\s*/i, '').trim();
+
+  // Strip leading symbols like '>', '›', '»', '-' and spaces
+  str = str.replace(/^[>›»\-\s]+/, '').trim();
+  if (!str) return 'Sem Rota';
+
+  // Check for Hub/Station prefix followed by route letter (e.g. "SP-A5_am1", "SC1->A3")
+  const hubMatch = str.match(/^[A-Za-z]{2,4}[-_]\s*[>›»\-\s]*([A-Za-z]+)(?:[\s_.\-/]*\d.*)?$/);
+  if (hubMatch) {
+    return hubMatch[1].toUpperCase();
+  }
+
+  // Extract leading route letters (e.g. "A5_am1" -> "A", ">A3" -> "A", "A" -> "A", "AA1_am1" -> "AA")
+  const match = str.match(/^([A-Za-z]+)(?:[\s_.\-/]*\d.*|[\s_.\-/].*)?$/);
+  if (match) {
+    return match[1].toUpperCase();
+  }
+
+  return str.toUpperCase();
+}
+

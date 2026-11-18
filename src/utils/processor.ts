@@ -7,7 +7,12 @@ import {
   RawStatusRecord,
   RouteGroup,
 } from '../types/logistics';
-import { formatCurrencyBRL, normalizeId, resolveFinalStatus } from './normalizers';
+import {
+  extractRouteGroup,
+  formatCurrencyBRL,
+  normalizeId,
+  resolveFinalStatus,
+} from './normalizers';
 
 export interface ProcessInput {
   faltantes: RawFaltanteRecord[];
@@ -120,10 +125,12 @@ export function processLogisticsData(input: ProcessInput): ProcessingResult {
 
     const override = normalizedOverrides[faltante.id];
     const statusFinal = override ? normalizeOverrideStatus(override.status) : statusArquivo;
+    const rotaGrupo = extractRouteGroup(faltante.rota);
 
     allFilteredPackages.push({
       id: faltante.id,
       rota: faltante.rota,
+      rotaGrupo,
       dataTimestamp: faltante.dataTimestamp,
       dataIso: faltante.dataIso,
       dataFormatada: faltante.dataFormatada,
@@ -145,6 +152,8 @@ export function processLogisticsData(input: ProcessInput): ProcessingResult {
     if (a.dataTimestamp !== b.dataTimestamp) {
       return a.dataTimestamp - b.dataTimestamp;
     }
+    const grupoCmp = a.rotaGrupo.localeCompare(b.rotaGrupo, 'pt-BR', { numeric: true, sensitivity: 'base' });
+    if (grupoCmp !== 0) return grupoCmp;
     const rotaCmp = a.rota.localeCompare(b.rota, 'pt-BR', { numeric: true, sensitivity: 'base' });
     if (rotaCmp !== 0) return rotaCmp;
     return a.id.localeCompare(b.id, 'pt-BR', { numeric: true });
@@ -163,11 +172,11 @@ export function processLogisticsData(input: ProcessInput): ProcessingResult {
 
   const routeMap = new Map<string, ProcessedPackage[]>();
   for (const pkg of sortingPackages) {
-    const list = routeMap.get(pkg.rota);
+    const list = routeMap.get(pkg.rotaGrupo);
     if (list) {
       list.push(pkg);
     } else {
-      routeMap.set(pkg.rota, [pkg]);
+      routeMap.set(pkg.rotaGrupo, [pkg]);
     }
   }
 

@@ -93,11 +93,20 @@ test('end-to-end demo dataset processing obeys all filtering, fallback, sorting,
     assert.ok(result.sortingPackages[i].dataTimestamp >= result.sortingPackages[i - 1].dataTimestamp);
   }
 
-  const spz1Resumo = result.resumoGroups.find((g) => g.rota === 'SP-Z1-04');
-  const spz1Full = result.routeGroups.find((g) => g.rota === 'SP-Z1-04');
-  assert.ok(spz1Resumo && spz1Full);
-  assert.equal(spz1Resumo.packages.length, 7);
-  assert.equal(spz1Full.packages.length, 10);
+  const rotaAResumo = result.resumoGroups.find((g) => g.rota === 'A');
+  const rotaAFull = result.routeGroups.find((g) => g.rota === 'A');
+  assert.ok(rotaAResumo && rotaAFull);
+  assert.equal(rotaAResumo.packages.length, 7);
+  assert.equal(rotaAFull.packages.length, 10);
+  assert.ok(rotaAFull.packages.every((p) => p.rotaGrupo === 'A'));
+  // Verifies individual packages maintain their specific sub-route string
+  const subRoutes = rotaAFull.packages.map((p) => p.rota);
+  assert.ok(subRoutes.includes('A5_am1'));
+  assert.ok(subRoutes.includes('>A5_am1'));
+  assert.ok(subRoutes.includes('A3'));
+  assert.ok(subRoutes.includes('>A3'));
+  assert.ok(subRoutes.includes('>A'));
+
   assert.equal(result.statusIdList.length, 18);
 });
 
@@ -189,7 +198,108 @@ test('when status file is absent, eligible packages show in main/resumo/rotas wi
   assert.ok(manualDelivered);
   assert.equal(manualDelivered.statusFinal, 'delivered');
 
-  const spz1Resumo = result.resumoGroups.find((g) => g.rota === 'SP-Z1-04');
-  assert.ok(spz1Resumo);
-  assert.equal(spz1Resumo.packages.length, 7);
+  const rotaAResumo = result.resumoGroups.find((g) => g.rota === 'A');
+  assert.ok(rotaAResumo);
+  assert.equal(rotaAResumo.packages.length, 7);
 });
+
+test('processor groups multiple route formats (A5_am1, >A5_am1, A3, >A3) under route letter "A" and sorts by date', () => {
+  const faltantes = [
+    {
+      id: 'P01',
+      rota: '>A5_am1',
+      dataTimestamp: 1000,
+      dataIso: '2026-11-15T01:00:00Z',
+      dataFormatada: '15/11/2026 01:00',
+      localizacao: 'Na estação',
+    },
+    {
+      id: 'P02',
+      rota: 'A3',
+      dataTimestamp: 2000,
+      dataIso: '2026-11-15T02:00:00Z',
+      dataFormatada: '15/11/2026 02:00',
+      localizacao: 'Na estação',
+    },
+    {
+      id: 'P03',
+      rota: '>A3',
+      dataTimestamp: 3000,
+      dataIso: '2026-11-15T03:00:00Z',
+      dataFormatada: '15/11/2026 03:00',
+      localizacao: 'Na estação',
+    },
+    {
+      id: 'P04',
+      rota: 'A5_am1',
+      dataTimestamp: 4000,
+      dataIso: '2026-11-15T04:00:00Z',
+      dataFormatada: '15/11/2026 04:00',
+      localizacao: 'Na estação',
+    },
+    {
+      id: 'P05',
+      rota: '>A',
+      dataTimestamp: 5000,
+      dataIso: '2026-11-15T05:00:00Z',
+      dataFormatada: '15/11/2026 05:00',
+      localizacao: 'Na estação',
+    },
+    {
+      id: 'P06',
+      rota: 'B2_am1',
+      dataTimestamp: 1500,
+      dataIso: '2026-11-15T01:30:00Z',
+      dataFormatada: '15/11/2026 01:30',
+      localizacao: 'Na estação',
+    },
+    {
+      id: 'P07',
+      rota: '>B2_am1',
+      dataTimestamp: 2500,
+      dataIso: '2026-11-15T02:30:00Z',
+      dataFormatada: '15/11/2026 02:30',
+      localizacao: 'Na estação',
+    },
+  ];
+
+  const result = processLogisticsData({
+    faltantes,
+    detalhesValor: [],
+    statusRecords: [],
+    hasStatusFile: false,
+    detalhesNA: [],
+    manualOverrides: {},
+  });
+
+  // Group names should only be base route letters: A and B
+  assert.equal(result.routeGroups.length, 2);
+  assert.equal(result.routeGroups[0].rota, 'A');
+  assert.equal(result.routeGroups[1].rota, 'B');
+
+  // Route A must collect all 5 packages regardless of prefix > or suffix 5_am1 / 3
+  const groupA = result.routeGroups[0];
+  assert.equal(groupA.packages.length, 5);
+  assert.deepEqual(
+    groupA.packages.map((p) => p.id),
+    ['P01', 'P02', 'P03', 'P04', 'P05']
+  );
+  // Package-level rota must retain original codes
+  assert.equal(groupA.packages[0].rota, '>A5_am1');
+  assert.equal(groupA.packages[0].rotaGrupo, 'A');
+  assert.equal(groupA.packages[1].rota, 'A3');
+  assert.equal(groupA.packages[1].rotaGrupo, 'A');
+
+  // Route B must collect both B packages
+  const groupB = result.routeGroups[1];
+  assert.equal(groupB.packages.length, 2);
+  assert.deepEqual(
+    groupB.packages.map((p) => p.id),
+    ['P06', 'P07']
+  );
+  assert.equal(groupB.packages[0].rota, 'B2_am1');
+  assert.equal(groupB.packages[0].rotaGrupo, 'B');
+  assert.equal(groupB.packages[1].rota, '>B2_am1');
+  assert.equal(groupB.packages[1].rotaGrupo, 'B');
+});
+

@@ -439,14 +439,19 @@ export default function App() {
   const filteredPrincipalPackages = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     return result.sortingPackages.filter((pkg) => {
-      if (selectedRouteFilter !== 'ALL' && pkg.rota !== selectedRouteFilter) {
+      if (
+        selectedRouteFilter !== 'ALL' &&
+        pkg.rotaGrupo !== selectedRouteFilter &&
+        pkg.rota !== selectedRouteFilter
+      ) {
         return false;
       }
       if (q) {
         const matchId = pkg.id.toLowerCase().includes(q);
         const matchDesc = (pkg.descricao ?? '').toLowerCase().includes(q);
         const matchRota = pkg.rota.toLowerCase().includes(q);
-        if (!matchId && !matchDesc && !matchRota) return false;
+        const matchGrupo = pkg.rotaGrupo.toLowerCase().includes(q);
+        if (!matchId && !matchDesc && !matchRota && !matchGrupo) return false;
       }
       return true;
     });

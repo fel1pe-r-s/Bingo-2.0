@@ -17,9 +17,11 @@ Aplicação web offline (React + TypeScript + Vite) para substituir planilhas ma
    ```bash
    npm run build
    ```
-4. Para rodar os testes unitários da lógica de processamento:
+4. Para rodar a suíte completa de testes automatizados:
    ```bash
-   npx --yes tsx --test src/utils/processor.test.ts
+   pnpm test
+   # ou: npm test
+   # ou: bun test
    ```
 
 ## Fluxo de uso
